@@ -61,11 +61,44 @@ import time
 import random
 import re
 
+"""
+# TODO: Update us_ny to take scrape_type as params for resume and start
+#           - start_query
+#               - Sees scrape type
+                - Pulls current (recently created) session for that scrape type
+                - Grabs first pull queue task (background: aaardvark, snapshot: 198232)
+                    - If background, us_ny tries to parse last vs. first and last
+                    - If snapshot, us_ny will need to move from inmate_id back down to
+                        record ID, or that will need to be included from get_target_list
+                    - There's no chance of our holding a pull task lease for so long, so 
+                        current pull task ID should be kept in the session info in datastore.
+                - Kicks off task to scrape that one
+                    - NOTE: Scrape search page currently goes to scrape results, but for
+                            snapshot search in us_ny the search will go straight to inmate/
+                            disambig page. Need a fork in there somewhere.
+                - When the scraper senses an 'end', it 
+                    - Finds the task listed in the most recent session to have one listed
+                    - Finds that task in the pull queue, and deletes it
+                    - Calls a new method that checks the pull queue. If something else 
+                    there, it kicks off new scrape for that and logs % pull queue complete.
+                        ALT: Have babysitter task in the push queue that waits 50sec,
+                        then checks current session to see if complete, and if so
+                        checks pull queue to kick off another if needed. Seems more
+                        fragile.
+# TODO: Update both this and us_ny to include session type in setup, all 
+#       session handling
+# TODO: Update us_ny to use pull queues for its name lists
+# TODO: Extend snapshot to include all mutable inmate info, including name
+  TODO: Rebuild search indices by running on local host w/dev server, then push those indices to the cloud
+# TODO: Write data migration script and special handler
+#           Migrate last_release_date and last_release_type from us_ny_record to record so they can be queried for all scrapers
+"""
+
 
 START_URL = "http://nysdoccslookup.doccs.ny.gov/"
 BASE_RESULTS_URL = "http://nysdoccslookup.doccs.ny.gov"
 RESUME_URL = "http://recidiviz-123.appspot.com/resume_scraper?region=us_ny"
-QUEUE_NAME = 'us-ny'
+QUEUE_NAME = 'us-ny-scraper'
 REGION = 'us_ny'
 FAIL_COUNTER = REGION + "_next_page_fail_counter"
 
@@ -112,7 +145,7 @@ def setup():
     return
 
 
-def start_query(first_name, last_name):
+def start_query(scrape_type):
     """
     start_query()
     Required by Scraper class. Is run to kick off scraping for a particular 
@@ -322,8 +355,6 @@ def resume_scrape():
     Returns:
         N/A 
     """
-    setup()
-
     logging.info("Sleeping for 40sec to allow taskqueue to purge...")
 
     # Give some time for the taskqueue to be cleared before creating new
@@ -1126,9 +1157,6 @@ def store_record(inmate_details):
         record.county_of_commit = county_of_commit
     if custody_status:
         record.custody_status = custody_status
-    if last_release:
-        record.last_release_type = last_release_type
-        record.last_release_date = last_release_date
     if min_sentence:
         min_sentence_duration = SentenceDuration(
             life_sentence=min_sentence['Life'],
@@ -1181,6 +1209,9 @@ def store_record(inmate_details):
         record.sex = inmate_sex
     if inmate_race:
         record.race = inmate_race
+    if last_release:
+        record.last_release_type = last_release_type
+        record.last_release_date = last_release_date
     record.last_name = inmate_name[0]
     record.given_names = inmate_name[1]
     record.record_id = record_id

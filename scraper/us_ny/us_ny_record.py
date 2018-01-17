@@ -23,8 +23,6 @@ these by adding the following:
     - county_of_commit: (string) County the inmate was convicted/committed in
     - custody_status: (string) Scraped string on custody status (more granular
         than just 'released' / 'not-released')
-    - last_release_type: (string) If released from prison, the reason
-    - last_release_date: (date) If released from prison, the date of release
     - earliest_release_date: (date) Earliest date to be released based on 
         min_sentence. In certain circumstances, may be released before this.
     - earliest_release_type: (string) The reason for the earliest possible
@@ -55,8 +53,6 @@ class UsNyRecord(Record):
     admission_type = ndb.StringProperty()
     county_of_commit = ndb.StringProperty()
     custody_status = ndb.StringProperty()
-    last_release_type = ndb.StringProperty()
-    last_release_date = ndb.DateProperty()
     earliest_release_date = ndb.DateProperty()
     earliest_release_type = ndb.StringProperty()
     parole_hearing_date = ndb.DateProperty()

@@ -64,6 +64,8 @@ Fields:
         sentence.
     - custody_date: Date the inmate's sentence started, if available
     - offense_date: Date the offense was committed, if available
+    - last_release_type: (string) If released from prison, the reason
+    - last_release_date: (date) Most recent date released
     - is_released: Whether the inmate was released (at least, for this crime)
     - given_names: Any first and middle names provided by the prison system
     - last_name: The inmate's surname, as provided by the prison system
@@ -81,6 +83,8 @@ class Record(polymodel.PolyModel):
     max_sentence_length = ndb.StructuredProperty(SentenceDuration, repeated=False)
     custody_date = ndb.DateProperty()
     offense_date = ndb.DateProperty()
+    last_release_date = ndb.DateProperty()
+    last_release_type = ndb.StringProperty()
     is_released = ndb.BooleanProperty()
     given_names = ndb.StringProperty()
     last_name = ndb.StringProperty()

@@ -3,7 +3,27 @@ queue:
   rate: 60/s
   bucket_size: 12
 
-- name: us-ny
+- name: us-ny-scraper
+  rate: 18/m
+  bucket_size: 1
+  max_concurrent_requests: 3
+  retry_parameters:
+    min_backoff_seconds: 5
+    max_backoff_seconds: 300
+    task_age_limit: 3d
+
+- name: us-ny-pull-background
+  mode: pull
+  rate: 18/m
+  bucket_size: 1
+  max_concurrent_requests: 3
+  retry_parameters:
+    min_backoff_seconds: 5
+    max_backoff_seconds: 300
+    task_age_limit: 3d
+
+- name: us-ny-pull-snapshot
+  mode: pull
   rate: 18/m
   bucket_size: 1
   max_concurrent_requests: 3
