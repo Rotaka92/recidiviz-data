@@ -3,7 +3,10 @@
 
 from auth import authenticate_request
 from datetime import datetime
-from google.appengine.api import taskqueue
+from google.appengine.ext.db import Timeout, TransactionFailedError, InternalError
+from models.query_docket import DocketItem
+from models.record import Record
+import json
 import logging
 import webapp2
 
@@ -100,7 +103,7 @@ def execute_command(region, action, params):
             return ("'%s' is not a valid scrape type - use one of %s. "
                     "Exiting." % (scrape_type, str(scrape_types)))
 
-        scraper.setup()
+        scraper.setup(scrape_type)
 
         if action == "resume":
             scraper.resume_scrape(scrape_type)
@@ -108,16 +111,9 @@ def execute_command(region, action, params):
             # Create target list for scraping
             target_list = get_target_list(scrape_type, region, params)
 
-            # Clear prior queue for this scrape type
-            queue = taskqueue.Queue(region + "-pull-" + scrape_type)
-            queue.purge()
-
-            # Build new queue from list
-            tasks = []
-            for item in target_list:
-                payload = (item[0] + "," + item[1]) if len(item) > 1 else item[0]
-                tasks.append(taskqueue.Task(payload=payload, method='PULL'))
-            queue.add(tasks)
+            # Clear prior query docket for this scrape type and add new items
+            clear_query_docket(region, scrape_type)
+            add_to_query_docket(region, scrape_type, target_list)
 
             # Start scraper
             scraper.start_query(scrape_type)
@@ -160,7 +156,13 @@ def get_target_list(scrape_type, region, params):
             [("key", "val"), ("key2", "val2"), ...])
 
     Returns:
-        List of queries for the scraper to run
+        For background lists, returns a list of names in one of the two forms:
+            Surnames only - ["Davis", "Egglesby", "Fitzroy", ...]
+            Full names - [["Davis", "David"], ["Egglesby", "Eleanor"], ...]
+        For snapshot lists, a list with two sublists: [target_list, ignore_list]
+            target_list: List of inmate IDs to target for the snapshots
+            ignore_list: List of record IDs which can be ignored during 
+                snapshotting, as they're too old for us to care about changes 
     """
     if scrape_type == "background":
         # Open name file for the region
@@ -172,11 +174,15 @@ def get_target_list(scrape_type, region, params):
         surname = get_param("surname", params, "")
 
         if surname:
-            get_name_list_subset(name_list, surname, given_names)
+            name_list = get_name_list_subset(name_list, surname, given_names)
+
+        return name_list
 
     else:
         # Snapshot scrape; pull list of current or recent inmates
         inmate_ids = []
+        inmate_entity_keys = []
+        relevant_records = []
         start_date = get_snapshot_start()
         
         # Get all snapshots showing inmates in prison within the date range
@@ -188,8 +194,10 @@ def get_target_list(scrape_type, region, params):
 
         for snapshot in current_inmate_snapshots:
             record = snapshot.parent()
+            relevant_records.append(record.record_id)
             inmate = record.parent()
             inmate_ids.append(inmate.inmate_id)
+            inmate_entity_keys.append(inmate.key)
 
         # Pull a list of inmates with a release_date within the window (for
         # systems which provide this, lets us check on inmates released before
@@ -198,11 +206,32 @@ def get_target_list(scrape_type, region, params):
         recently_released_records = recently_released.fetch()
 
         for record in recently_released_records:
+            relevant_records.append(record.record_id)
             inmate = record.parent()
             inmate_ids.append(inmate.inmate_id)
+            inmate_entity_keys.append(inmate.key)
+
+        # De-dup the lists from the two criteria pulled above
+        inmate_ids = list(set(inmate_ids))
+        inmate_entity_keys = list(set(inmate_entity_keys))
+        relevant_records = list(set(relevant_records))
+
+        # Use the inmate keys to invert the record list - need to know which 
+        # records to ignore, not which to scrape, since it's important to 
+        # scrape new records as well.
+        ignore_records = []
+
+        for inmate_key in inmate_entity_keys:
+            records = Record.query(ancestor=inmate_key).fetch()
+            for record in records:
+                record_id = record.record_id
+                if record_id in relevant_records:
+                    pass
+                else:
+                    ignore_records.append(record_id)
 
         # De-dup the two lists, return single list of inmate IDs
-        return list(set(inmate_ids))
+        return [inmate_ids, ignore_records]
 
 
 def get_name_list_subset(name_list, surname, given_names):
@@ -262,6 +291,69 @@ def get_snapshot_start():
                                    year=today.year-SNAPSHOT_DISTANCE_YEARS)
 
     return start_date
+
+
+def purge_query_docket(region, scrape_type):
+    """
+    purge_query_docket()
+    Retrieves and deletes all current docket entries that match the region and
+    scrape type specified (e.g., all us_ny queries in the 'snapshot' docket).
+
+    Args:
+        region: Region code, e.g. us_ny
+        scrape_type: 'background' or 'snapshot'
+    """
+    docket_query = DocketItem.query(ndb.AND(DocketItem.region == region, 
+                                            DocketItem.scrape_type == scrape_type))
+
+    # If this was for a snapshot query, purge ignore records too
+    if scrape_type == "snapshot":
+        purge_query_docket(region, "snapshot-ignore")
+
+    empty = False 
+    while not empty:
+        docket_items = docket_query.fetch(20, keys_only=True)
+
+        if len(docket_items) > 0:
+            ndb.delete_multi(docket_items)
+        else:
+            empty = True
+
+
+def add_to_query_docket(region, scrape_type, items):
+    """
+    add_to_query_docket()
+    Adds items in the list to the relevant query docket (that matching the region
+    and type given). The scraper will pull each item from the docket in turn for
+    scraping (e.g. each name, if a background scrape, or each inmate ID if a 
+    snapshot scrape.)
+
+    Args:
+        region: Region code, e.g. us_ny
+        scrape_type: 'background' or 'snapshot'
+        items: List of items / payloads to add. String, exact format varies by scraper
+    """
+    # If snapshot, separate out records to be ignored and add them as well
+    if scrape_type == "snapshot":
+        ignore_records = items[1]
+        items = items[0]
+
+        add_to_query_docket(region, "snapshot-ignore", ignore_records)
+
+    # Add items to the docket
+    for item in items:
+        payload = json.dumps(item)
+
+        new_docket_item = DocketItem(region=region,
+                                     scrape_type=scrape_type,
+                                     content=payload)
+        try:
+            new_docket_item.put()
+        except (Timeout, TransactionFailedError, InternalError):
+            logging.error("Couldn't persist new query to %s/%s docket, "
+                          "query: %s" % (region, scrape_type, str(item)))
+
+    return
 
 
 app = webapp2.WSGIApplication([

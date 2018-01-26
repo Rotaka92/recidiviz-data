@@ -1,6 +1,6 @@
 cron:
 - description: Start NY scraper every day at 9pm
-  url: /resume_scraper?region=us_ny
+  url: /scrape_command?region=us_ny&action=resume&scrape_type=background"
   schedule: every day 21:00
   timezone: America/New_York
   retry_parameters:
@@ -9,7 +9,7 @@ cron:
     job_age_limit: 9h
 
 - description: Stop NY scraper every day at 9am
-  url: /stop_scraper?region=us_ny
+  url: /scrape_command?region=us_ny&action=stop&scrape_type=background"
   schedule: every day 09:00
   timezone: America/New_York
   retry_parameters:

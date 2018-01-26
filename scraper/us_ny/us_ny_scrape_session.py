@@ -13,12 +13,19 @@ ScrapedRecord entities which predate the current session vs. those from
 it (which are records that should be skipped).
 
 Fields:
+    - docket_item_key: The key for the docket entity this scrape session
+        is in response to. Will be used to delete item after completion.
     - start: Date/time this session started
     - end: Date/time when this session finished
+    - scrape_type: 'background' or 'snapshot'
+    - last_scraped: String in the form "SURNAME, FIRST" of the last 
+        scraped name in this session
 """
 class ScrapeSession(ndb.Model):
+    docket_item_key = ndb.KeyProperty()
     start = ndb.DateTimeProperty(auto_now_add=True)
     end = ndb.DateTimeProperty()
+    scrape_type = ndb.StringProperty(choices=("background", "snapshot"))
     last_scraped = ndb.StringProperty()
 
 
