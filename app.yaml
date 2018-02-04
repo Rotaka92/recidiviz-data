@@ -10,6 +10,11 @@ handlers:
   script: scraper.worker.app
   login: admin
 
+# TEST ONLY
+- url: /populate_test_db
+  script: scraper.populate_test_db.app
+  login: admin
+
 libraries:
 - name: webapp2
   version: latest

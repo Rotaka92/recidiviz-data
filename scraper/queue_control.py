@@ -3,9 +3,12 @@
 
 from auth import authenticate_request
 from datetime import datetime
+from google.appengine.ext import ndb
 from google.appengine.ext.db import Timeout, TransactionFailedError, InternalError
 from models.query_docket import DocketItem
 from models.record import Record
+from models.inmate_snapshot import InmateSnapshot
+import csv
 import json
 import logging
 import webapp2
@@ -13,9 +16,9 @@ import webapp2
 
 region_list = ["us_ny"]
 available_actions = ["start", "stop", "resume"]
-scrape_types = ["background, snapshot"]
+scrape_types = ["background", "snapshot"]
 FILENAME_PREFIX = "./name_lists/"
-SNAPSHOT_DISTANCE_YEARS = 15
+SNAPSHOT_DISTANCE_YEARS = 10
 name_lists = {"us_ny": "us_ny_names.csv"}
 
 
@@ -37,16 +40,16 @@ class ScraperCommand(webapp2.RequestHandler):
         """
         request_region = self.request.get('region', None).lower()
         request_action = self.request.get('action', None).lower()
-        request_params = self.request.get.items()
+        request_params = self.request.GET.items()
 
         # Validate region and action requested
         if request_action not in available_actions:
-            invalid_input("No recognized action parameter provided. Use "
+            self.invalid_input("No recognized action parameter provided. Use "
                           "one of %s. Exiting." % str(available_actions))
             return
 
         if (request_region not in region_list) and (request_region != "all"):
-            invalid_input("No valid region parameter provided. Use a "
+            self.invalid_input("No valid region parameter provided. Use a "
                           "specific region code (e.g., us_ny) or 'all'. Exiting.")
             return
 
@@ -61,12 +64,12 @@ class ScraperCommand(webapp2.RequestHandler):
             issue_message = execute_command(region, request_action, request_params)
             if issue_message:
                 # Parameters further down the decision tree were invalid
-                invalid_input(issue_message)
+                self.invalid_input(issue_message)
                 return
 
         return
 
-    def invalid_input(log_message):
+    def invalid_input(self, log_message):
         # Invalid input, log the error and exit.
         logging.error(log_message)
         
@@ -94,6 +97,8 @@ def execute_command(region, action, params):
     module = getattr(top_level, region)
     scraper = getattr(module, region + "_scraper")
 
+    logging.info("Scraper command '%s' received." % action)
+
     if action == "stop":
         scraper.stop_scrape()
     else:
@@ -112,7 +117,7 @@ def execute_command(region, action, params):
             target_list = get_target_list(scrape_type, region, params)
 
             # Clear prior query docket for this scrape type and add new items
-            clear_query_docket(region, scrape_type)
+            purge_query_docket(region, scrape_type)
             add_to_query_docket(region, scrape_type, target_list)
 
             # Start scraper
@@ -193,9 +198,11 @@ def get_target_list(scrape_type, region, params):
         current_inmate_snapshots = current_inmate_query.fetch()
 
         for snapshot in current_inmate_snapshots:
-            record = snapshot.parent()
+            record_key = snapshot.key.parent()
+            record = record_key.get()
             relevant_records.append(record.record_id)
-            inmate = record.parent()
+            inmate_key = record.key.parent()
+            inmate = inmate_key.get()
             inmate_ids.append(inmate.inmate_id)
             inmate_entity_keys.append(inmate.key)
 
@@ -207,7 +214,8 @@ def get_target_list(scrape_type, region, params):
 
         for record in recently_released_records:
             relevant_records.append(record.record_id)
-            inmate = record.parent()
+            inmate_key = record.key.parent()
+            inmate = inmate_key.get()
             inmate_ids.append(inmate.inmate_id)
             inmate_entity_keys.append(inmate.key)
 
@@ -331,17 +339,17 @@ def add_to_query_docket(region, scrape_type, items):
     Args:
         region: Region code, e.g. us_ny
         scrape_type: 'background' or 'snapshot'
-        items: List of items / payloads to add. String, exact format varies by scraper
+        items: List of items / payloads to add. List, exact format varies by scraper
     """
-    # If snapshot, separate out records to be ignored and add them as well
-    if scrape_type == "snapshot":
-        ignore_records = items[1]
-        items = items[0]
+    # If snapshot, separate out records to be ignored and add them as DocketItems
+    # as well.
+    docket_items = items if scrape_type == "snapshot-ignore" else items[0]
 
-        add_to_query_docket(region, "snapshot-ignore", ignore_records)
+    if scrape_type == "snapshot":
+        add_to_query_docket(region, "snapshot-ignore", items[1])
 
     # Add items to the docket
-    for item in items:
+    for item in docket_items:
         payload = json.dumps(item)
 
         new_docket_item = DocketItem(region=region,
@@ -357,5 +365,5 @@ def add_to_query_docket(region, scrape_type, items):
 
 
 app = webapp2.WSGIApplication([
-    ('/scraper_command', ScraperCommand)
+    ('/scrape_command', ScraperCommand)
 ], debug=False)

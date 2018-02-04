@@ -20,12 +20,10 @@ inherit these common properties, then add more if their region has more
 available. See us_ny_scraper.py for an example.
 
 Fields:
-    - snapshot_date: Python datetime for time of snapshot
-    - facility: State-provided facility name
     - (see us_ny_record.py for remaining field descriptions)
 """
 class UsNyInmateSnapshot(InmateSnapshot):
-	last_custody_date = ndb.DateProperty()
+    last_custody_date = ndb.DateProperty()
     admission_type = ndb.StringProperty()
     county_of_commit = ndb.StringProperty()
     custody_status = ndb.StringProperty()

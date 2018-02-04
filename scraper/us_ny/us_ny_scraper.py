@@ -45,11 +45,11 @@ from google.appengine.api import memcache
 from google.appengine.api import taskqueue
 from google.appengine.api import urlfetch
 from lxml import html
-from models.inmate_snapshot import InmateSnapshot
 from models.query_docket import DocketItem
 from models.record import Offense, SentenceDuration
 from us_ny_inmate import UsNyInmate
 from us_ny_record import UsNyRecord
+from us_ny_inmate_snapshot import UsNyInmateSnapshot
 from us_ny_scrape_session import ScrapeSession, ScrapedRecord
 
 import dateutil.parser as parser
@@ -63,10 +63,11 @@ import random
 import re
 
 """
-  TODO: Rebuild search indices by running on local host w/dev server, then push those indices to the cloud
-# TODO: Write data migration script and special handler
-#           Migrate last_release_date and last_release_type from us_ny_record to record so they can be queried for all scrapers
-            Migrate InmateFacilitySnapshots into InmateSnapshots
+Rebuild search indices by running on local host w/dev server, then push those indices to the cloud
+Write data migration script and special handler
+    Migrate last_release_date and last_release_type from us_ny_record to record so they can be queried for all scrapers
+    Migrate InmateFacilitySnapshots into InmateSnapshots
+Remove test scaffolding in app.yaml, populate_db
 """
 
 
@@ -87,7 +88,7 @@ requests_toolbelt.adapters.appengine.monkeypatch()
 urlfetch.set_default_fetch_deadline(60)
 
 
-# TODO(andrew) - Create class to surround this with, with requirements for 
+# TODO(andrew) - Create class to surround this with, with requirements for
 # the functions that will be called from recidiviz and worker such as setup(),
 # start_query(), stop_scraper(), and resume_scraper().
 def setup(scrape_type):
@@ -107,6 +108,8 @@ def setup(scrape_type):
 
     # Remove any old scraping session data
     cleanup()
+
+    logging.info("Creating new scrape session, type: %s" % scrape_type)
 
     # Create new session
     new_session = ScrapeSession(scrape_type=scrape_type)
@@ -143,9 +146,12 @@ def start_query(scrape_type):
 
     # Get an arbitrary item from the docket to work on
     docket_item = iterate_docket_item(scrape_type)
+    if not docket_item:
+        cleanup()
+        return
 
     # Set relevant params for scrape_search_page task
-    params = ["scrape_type": scrape_type, "content": docket_item]
+    params = {"scrape_type": scrape_type, "content": docket_item}
     serial_params = json.dumps(params)
 
     # Enqueue task to get new session vars
@@ -357,6 +363,9 @@ def resume_scrape(scrape_type):
     else:
         # Snapshot scrape, get an item from the docket and continue from there
         content = iterate_docket_item(scrape_type)
+        if not content:
+            cleanup()
+            return
 
     params = {'scrape_type': scrape_type, 'content': content}
     serial_params = json.dumps(params)
@@ -461,7 +470,7 @@ def scrape_search_page(params):
 
 def scrape_search_results_page(params):
     """
-    get scrape_search_page()
+    get scrape_search_results_page()
     Fetches search results page, parses results to extract inmate listings
     and params for the next page of results. Enqueues tasks to scrape both
     the individual listings and next page of results.
@@ -504,7 +513,6 @@ def scrape_search_results_page(params):
 
         # The request for the first results page is a little unique 
         if 'first_page' in params:
-
             # Check whether the name to search for is a surname only, or a list
             # with both surname and given names.
             if isinstance(params["content"], basestring):
@@ -601,8 +609,9 @@ def scrape_search_results_page(params):
             './div/input[@type="submit"]/@value')[0]
 
         # Enqueue tasks to follow that link / get result
-        result_params['first_name'] = params['first_name']
-        result_params['last_name'] = params['last_name']
+        result_params['content'] = params['content']
+        result_params['scrape_type'] = params['scrape_type']
+
         result_params = json.dumps(result_params)
 
         taskqueue.add(url='/scraper',
@@ -665,9 +674,10 @@ def scrape_search_results_page(params):
             # Fail task to retry
             return -1
 
-    # Enqueue task to follow that link / get result
-    next_params['first_name'] = params['first_name']
-    next_params['last_name'] = params['last_name']
+    # Enqueue task to follow that link / get next results page
+    next_params['content'] = params['content']
+    next_params['scrape_type'] = params['scrape_type']
+
     next_params = json.dumps(next_params)
 
     taskqueue.add(url='/scraper',
@@ -716,20 +726,19 @@ def scrape_inmate(params):
         Enqueues task with params from search page form, to fetch the first
         page of results.
     """
+    params = json.loads(params)
+
     inmate_details = {}
     ignore_list = []
     next_docket_item = False
     url = BASE_RESULTS_URL + str(params['action'])
+    scrape_type = params['scrape_type']
     proxies = get_proxies()
 
-    params = json.loads(params)
-
     try:
-
-
         # Create a request using the provided params. How we structure this varies
         # a bit depending on how we got here.
-        if 'scrape_type' in params:
+        if "first_page" in params and scrape_type == "snapshot":
             # Arriving from snapshot scrape / main search page
             ignore_list = get_ignore_list()
             next_docket_item = True
@@ -892,10 +901,10 @@ def scrape_inmate(params):
 
         # We can call this one without creating a task, it doesn't create a new
         # network call
-        return scrape_disambiguation(page_tree, params['content'], ignore_list)
+        return scrape_disambiguation(page_tree, params['content'], scrape_type, ignore_list)
 
 
-def scrape_disambiguation(page_tree, query_content, ignore_list):
+def scrape_disambiguation(page_tree, query_content, scrape_type, ignore_list):
     """
     scrape_disambiguation()
     In attempting to fetch an inmate, the scrape_inmate received a 
@@ -920,7 +929,12 @@ def scrape_disambiguation(page_tree, query_content, ignore_list):
     group_id = generate_id(UsNyInmate)
     new_tasks = []
     department_identification_numbers = []
-    first_task = True
+
+    # We detect the end of a normal 'background' scrape is detecting that we're
+    # at the end of the alphabet. In the case of snapshot scrapes, that won't
+    # be the case - so we add a marker into one and only one of the inmate 
+    # scrapes that signifies we should kick off the next task.
+    first_task = True if scrape_type == "snapshot" else False
 
     # Parse the results list
     result_list = page_tree.xpath('//div[@id="content"]/table/tr/td/form')
@@ -985,7 +999,6 @@ def scrape_disambiguation(page_tree, query_content, ignore_list):
 
             # Double-check that we haven't already processed this entry while
             # scraping another disambig page for this same inmate
-
             current_session = get_open_sessions(most_recent_only=True)
 
             if current_session is None:
@@ -1018,11 +1031,12 @@ def scrape_disambiguation(page_tree, query_content, ignore_list):
 
             # Set the next_docket_item to True for only one inmate page
             task_params['next_docket_item'] = first_task
-            first_task = False 
+            first_task = False
 
             # Enqueue task to follow that link / scrape record
             task_params['content'] = query_content
             task_params['linked_records'] = department_identification_numbers
+            task_params['scrape_type'] = scrape_type
             task_params = json.dumps(task_params)
 
             taskqueue.add(url='/scraper',
@@ -1235,35 +1249,35 @@ def store_record(inmate_details):
 
     scraped_facility = inmate_details['Housing / Releasing Facility']
 
-    inmate_snapshot = InmateSnapshot(parent=record_key,
-                                       facility=scraped_facility,
-                                       last_release_date=last_release_date,
-                                       last_release_type=last_release_type,
-                                       is_released=released,
-                                       min_sentence_length=min_sentence_duration,
-                                       max_sentence_length=max_sentence_duration,
-                                       last_custody_date=last_custody,
-                                       admission_type=admission_type,
-                                       county_of_commit=county_of_commit,
-                                       custody_status=custody_status,
-                                       earliest_release_date=earliest_release_date,
-                                       earliest_release_type=earliest_release_type,
-                                       parole_hearing_date=parole_hearing_date,
-                                       parole_hearing_type=parole_hearing_type,
-                                       parole_elig_date=parole_elig_date,
-                                       cond_release_date=cond_release_date,
-                                       max_expir_date=max_expir_date,
-                                       max_expir_date_superv=max_expir_date_superv,
-                                       max_expir_date_parole=max_expir_date_parole,
-                                       parole_discharge_date=parole_discharge_date)
+    inmate_snapshot = UsNyInmateSnapshot(parent=record_key,
+                                         facility=scraped_facility,
+                                         last_release_date=last_release_date,
+                                         last_release_type=last_release_type,
+                                         is_released=released,
+                                         min_sentence_length=min_sentence_duration,
+                                         max_sentence_length=max_sentence_duration,
+                                         last_custody_date=last_custody,
+                                         admission_type=admission_type,
+                                         county_of_commit=county_of_commit,
+                                         custody_status=custody_status,
+                                         earliest_release_date=earliest_release_date,
+                                         earliest_release_type=earliest_release_type,
+                                         parole_hearing_date=parole_hearing_date,
+                                         parole_hearing_type=parole_hearing_type,
+                                         parole_elig_date=parole_elig_date,
+                                         cond_release_date=cond_release_date,
+                                         max_expir_date=max_expir_date,
+                                         max_expir_date_superv=max_expir_date_superv,
+                                         max_expir_date_parole=max_expir_date_parole,
+                                         parole_discharge_date=parole_discharge_date)
 
-    snapshot_result = compare_and_set_snapshot(record_key, inmate_snapshot)
+    snapshot_result = compare_and_set_snapshot(record.key, inmate_snapshot)
     if not snapshot_result:
-        logging.warning("Couldn't persist facility snapshot for record: %s" %
+        logging.warning("Problem comparing/setting snapshot for record: %s" %
                         record_id)
 
     if 'group_id' in inmate_details:
-        logging.info("Stored record for %s %s, inmate %s, in group %s, for "
+        logging.info("Checked record for %s %s, inmate %s, in group %s, for "
                      "record %s." % (
                          inmate_name[1],
                          inmate_name[0],
@@ -1271,7 +1285,7 @@ def store_record(inmate_details):
                          inmate_details['group_id'],
                          record_id))
     else:
-        logging.info("Stored record for %s %s, inmate %s, (no group), for "
+        logging.info("Checked record for %s %s, inmate %s, (no group), for "
                      "record %s." % (
                          inmate_name[1],
                          inmate_name[0],
@@ -1303,6 +1317,7 @@ def parse_sentence_duration(term_string, inmate_id):
             'Years' (int) # years
             'Months' (int) # months
             'Days' (int) # days
+        Or None, if string is empty or not parsable.
 
 
         Enqueues task for each incarceration event listed on the page.
@@ -1317,10 +1332,12 @@ def parse_sentence_duration(term_string, inmate_id):
     else:
         parsed_nums = re.findall('\d+', term_string)
 
-        if (not parsed_nums) or (len(parsed_nums) < 3):
+        if not term_string:
+            return None
+        elif (not parsed_nums) or (len(parsed_nums) < 3):
             logging.info("Couldn't parse term string '%s' for inmate: %s" %
                          (term_string, inmate_id))
-            result = None
+            return None
         else:
             years = int(parsed_nums[0])
             months = int(parsed_nums[1])
@@ -1353,12 +1370,16 @@ def parse_date_string(date_string, inmate_id):
         None if string wasn't one of our expected values (this is common, often
         NONE or LIFE are put in for these if life sentence).
     """
-    try:
-        result = parser.parse(date_string)
-    except ValueError:
-        logging.info("Couldn't parse date string '%s' for inmate: %s" %
-                     (date_string, inmate_id))
-        result = None
+    if date_string:
+        try:
+            result = parser.parse(date_string)
+            result = result.date()
+        except ValueError:
+            logging.info("Couldn't parse date string '%s' for inmate: %s" %
+                         (date_string, inmate_id))
+            return None
+    else:
+        return None
 
     return result
 
@@ -1743,12 +1764,12 @@ def iterate_docket_item(scrape_type):
     """
     docket_item = get_new_docket_item(scrape_type)
     if not docket_item:
-        logging.info("No items in %s queue." % scrape_type)
+        logging.info("No items in %s queue. Ending scrape." % scrape_type)
         return False
 
     item_content = json.loads(docket_item.content)
 
-    item_added = add_docket_item_to_current_session(docket_item)
+    item_added = add_docket_item_to_current_session(docket_item, scrape_type)
     if not item_added:
         logging.error("Failed to update session with %s docket item %s" %
                       (scrape_type, item_content))
@@ -1757,7 +1778,7 @@ def iterate_docket_item(scrape_type):
     if scrape_type == "snapshot":
         record_id = inmate_to_record(item_content)
         if not record_id:
-            logging.error("Couldn't convert docket item %s to record" % 
+            logging.error("Couldn't convert docket item %s to record" %
                           item_content)
             return False
 
@@ -1769,7 +1790,7 @@ def iterate_docket_item(scrape_type):
     return result
 
 
-def get_new_docket_item(scrape_type):
+def get_new_docket_item(scrape_type, attempt=0):
     """
     get_new_docket_item()
     Retrieves an arbitrary item still in the docket (whichever docket
@@ -1777,14 +1798,15 @@ def get_new_docket_item(scrape_type):
 
     Args:
         scrape_type: 'background' or 'snapshot'
+        attempt: # of attempts so far.. After 2, returns None
 
     Returns:
         None if query returns None
         DocketItem entity from queue
     """
     docket_query = DocketItem.query(ndb.AND(
-            DocketItem.region == REGION, 
-            DocketItem.scrape_type == scrape_type))
+        DocketItem.region == REGION, 
+        DocketItem.scrape_type == scrape_type))
 
     docket_item = docket_query.get()
 
@@ -1796,6 +1818,10 @@ def get_new_docket_item(scrape_type):
         except (Timeout, TransactionFailedError, InternalError):
             logging.warning("Failed to update docket item start time for item "
                 "with content %s" % docket_item.content)
+    elif attempt < 2:
+        # Datastore index may not have been updated, sleep for 5sec then retry
+        time.sleep(5)
+        return get_new_docket_item(scrape_type, attempt+1)
 
     return docket_item
 
@@ -1845,6 +1871,9 @@ def remove_current_item_from_docket():
     """
     session = get_open_sessions(open_only=True, 
                                 most_recent_only=True)
+    if not session:
+        logging.error("No open sessions found to remove docket item.")
+
     item_key = session.docket_item_key
     session.docket_item_key = None
 
@@ -1859,7 +1888,7 @@ def remove_current_item_from_docket():
     return
 
 
-def add_docket_item_to_current_session(item):
+def add_docket_item_to_current_session(item, scrape_type):
     """
     add_docket_item_to_current_session()
     Adds a provided item's key to the current session info, so
@@ -1868,6 +1897,7 @@ def add_docket_item_to_current_session(item):
 
     Args:
         item: A DocketItem entity
+        scrape_type: 'background' or 'snapshot'
 
     Returns:
         True is successful
@@ -1877,7 +1907,12 @@ def add_docket_item_to_current_session(item):
                                 most_recent_only=True, 
                                 scrape_type=scrape_type)
     
-    session.docket_item_key = item.key
+    if session:
+        session.docket_item_key = item.key
+    else:
+        # Usually means we (manually or via cron) commanded scraper to stop.
+        logging.info("No open session to update with docket item.")
+        return False
 
     try:
         session.put()
@@ -1901,18 +1936,26 @@ def compare_and_set_snapshot(record_key, inmate_snapshot):
         True if successful
         False if datastore errors
     """
+    new_snapshot = False
+    snapshot_class = ndb.Model._kind_map['UsNyInmateSnapshot']
+    snapshot_attrs = snapshot_class._properties
+
     # Get the most recent snapshot for this record
-    last_inmate_snapshot = InmateSnapshot.query(
-        ancestor=record_key).order(-InmateSnapshot.snapshot_date).get()
+    last_inmate_snapshot = UsNyInmateSnapshot.query(
+        ancestor=record_key).order(-UsNyInmateSnapshot.snapshot_date).get()
 
     # Check if each entity property is the same as last snapshot
-    new_snapshot = False
     if last_inmate_snapshot:
-        for attr, value in vars(inmate_snapshot).iteritems():
-            last_value = getattr(last_inmate_snapshot, attr)
-            if value != last_value:
-                new_snapshot = True
-                break
+        for attribute in snapshot_attrs:
+            if attribute not in ["class", "snapshot_date"]:
+                current_value = getattr(inmate_snapshot, attribute)
+                last_value = getattr(last_inmate_snapshot, attribute)
+                if current_value != last_value:
+                    new_snapshot = True
+                    logging.info("Found change in inmate snapshot: field %s "
+                                 "was '%s', is now '%s'." % 
+                                 (attribute, last_value, current_value))
+                    break
     else:
         # No last snapshot, this will be the first
         new_snapshot = True

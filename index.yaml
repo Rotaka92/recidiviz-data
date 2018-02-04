@@ -22,6 +22,18 @@ indexes:
   - name: snapshot_date
     direction: desc
 
+- kind: InmateSnapshot
+  properties:
+  - name: is_released
+  - name: snapshot_date
+
+- kind: InmateSnapshot
+  ancestor: yes
+  properties:
+  - name: class
+  - name: snapshot_date
+    direction: desc
+
 - kind: Record
   ancestor: yes
   properties:
@@ -30,6 +42,19 @@ indexes:
 - kind: ScrapeSession
   properties:
   - name: end
+  - name: scrape_type
+  - name: start
+    direction: desc
+
+- kind: ScrapeSession
+  properties:
+  - name: end
+  - name: start
+    direction: desc
+
+- kind: ScrapeSession
+  properties:
+  - name: scrape_type
   - name: start
     direction: desc
 

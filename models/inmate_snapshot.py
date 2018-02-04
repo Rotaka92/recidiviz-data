@@ -1,7 +1,6 @@
 # Copyright 2017 Andrew Corp <andrew@andrewland.co> 
 # All rights reserved.
 
-
 from google.appengine.ext import ndb
 from google.appengine.ext.ndb import polymodel
 from models.record import SentenceDuration
@@ -33,3 +32,14 @@ class InmateSnapshot(polymodel.PolyModel):
     is_released = ndb.BooleanProperty()
     min_sentence_length = ndb.StructuredProperty(SentenceDuration, repeated=False)
     max_sentence_length = ndb.StructuredProperty(SentenceDuration, repeated=False)
+
+
+"""
+InmateFacilitySnapshot
+
+Old model, keeping for short-term migration purposes only.
+"""
+class InmateFacilitySnapshot(polymodel.PolyModel):
+    snapshot_date = ndb.DateTimeProperty(auto_now_add=True)
+    facility = ndb.StringProperty()
+    migrated = ndb.BooleanProperty()

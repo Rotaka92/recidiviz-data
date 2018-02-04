@@ -108,3 +108,6 @@ venv.bak/
 # Sublime stuff
 *.sublime*
 
+# Gitignore and test scripts
+.gitignore
+populate_test_db.*
