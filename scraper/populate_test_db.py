@@ -141,6 +141,7 @@ def purge_datastore():
     env_var_query = EnvironmentVariable.query().fetch()
     inmate_query = UsNyInmate.query().fetch()
     record_query = UsNyRecord.query().fetch()
+    inmate_facility_snapshot_query = InmateFacilitySnapshot.query().fetch()
     inmate_snapshot_query = UsNyInmateSnapshot.query().fetch()
     scraped_session_query = ScrapeSession.query().fetch()
     scraped_record_query = ScrapedRecord.query().fetch()
@@ -154,6 +155,9 @@ def purge_datastore():
 
     for record in record_query:
         record.key.delete()
+
+    for facility_snapshot in inmate_facility_snapshot_query:
+        facility_snapshot.key.delete()
 
     for snapshot in inmate_snapshot_query:
         snapshot.key.delete()
