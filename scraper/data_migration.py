@@ -131,8 +131,8 @@ def migrate_snapshots(cursor=None, num_updated=0, batch_size=100, test_only=True
         inmate_snapshot = UsNyInmateSnapshot(parent=record_key,
                                              snapshot_date=facility_snapshot.snapshot_date,
                                              facility=facility_snapshot.facility,
-                                             last_release_date=record.last_release_date,
-                                             last_release_type=record.last_release_type,
+                                             latest_release_date=record.last_release_date,
+                                             latest_release_type=record.last_release_type,
                                              is_released=record.is_released,
                                              min_sentence_length=record.min_sentence_length,
                                              max_sentence_length=record.max_sentence_length,
@@ -209,7 +209,7 @@ def migrate_record_fields(cursor=None, num_updated=0, batch_size=100, test_only=
 
         # Clone properties to the instance (so as not to delete from the class),
         # and delete from the entity.
-        if test_only:
+        if not test_only:
             record._clone_properties()
             del record._properties['last_release_type']
             del record._properties['last_release_date']
