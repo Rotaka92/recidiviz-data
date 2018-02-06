@@ -1,3 +1,21 @@
+# Recidiviz - a platform for tracking granular recidivism metrics in real time
+# Copyright (C) 2018 Recidiviz, Inc.
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+# =============================================================================
+
+
 import logging
 
 from google.appengine.ext import deferred
@@ -58,14 +76,14 @@ class DataMigration(webapp2.RequestHandler):
 
         if migration_type == "snapshot":
             if test_only:
-                migrate_snapshots(batch_size=TEST_BATCH_SIZE)
+                migrate_snapshots(batch_size=TEST_BATCH_SIZE, test_only=True)
             else:
-                deferred.defer(migrate_snapshots)
+                deferred.defer(migrate_snapshots, test_only=False)
         elif migration_type == "record":
             if test_only:
-                migrate_record_fields(batch_size=TEST_BATCH_SIZE)
+                migrate_record_fields(batch_size=TEST_BATCH_SIZE, test_only=True)
             else:
-                deferred.defer(migrate_record_fields)
+                deferred.defer(migrate_record_fields, test_only=False)
         else:
             logging.error("Migration type '%s' not recognized. Exiting." % 
                 migration_type)
@@ -77,7 +95,7 @@ class DataMigration(webapp2.RequestHandler):
         logging.info("Kicked off migration.")
 
 
-def migrate_snapshots(cursor=None, num_updated=0, batch_size=100):
+def migrate_snapshots(cursor=None, num_updated=0, batch_size=100, test_only=True):
     """
     migrate_snapshots()
     Migrate InmateFacilitySnapshots into InmateSnapshot records. Reads in 50
@@ -90,6 +108,7 @@ def migrate_snapshots(cursor=None, num_updated=0, batch_size=100):
         cursor: Query cursor for where we are in the migration
         num_updated: Current number of records updated
         batch_size: Number of records to handle during this run
+        test_only: If true, performs non-destructive migration only
 
     Returns:
         True if completes migration of all InmateFacilitySnapshots
@@ -143,19 +162,21 @@ def migrate_snapshots(cursor=None, num_updated=0, batch_size=100):
                      (len(to_put), num_updated))
 
     # Delete migrated snapshots
-    if to_del:
+    if to_del and not test_only:
         ndb.delete_multi(to_del)
 
     # If there are more entities, re-queue this task for the next page.
     if more:
-        deferred.defer(
-            migrate_snapshots, cursor=next_cursor, num_updated=num_updated)
+        deferred.defer(migrate_snapshots, 
+                       cursor=next_cursor, 
+                       num_updated=num_updated, 
+                       test_only=test_only)
     else:
         logging.debug(
             'migrate_snapshots complete with %d updates!' % num_updated)
 
 
-def migrate_record_fields(cursor=None, num_updated=0, batch_size=100):
+def migrate_record_fields(cursor=None, num_updated=0, batch_size=100, test_only=True):
     """
     migrate_record_fields
     Transfers the UsNyRecord fields 'last_release_date' and 'last_release_type'
@@ -166,6 +187,7 @@ def migrate_record_fields(cursor=None, num_updated=0, batch_size=100):
         cursor: Query cursor for where we are in the migration
         num_updated: Current number of records updated
         batch_size: Number of records to handle during this run
+        test_only: If true, performs non-destructive migration only
 
     Returns
         Nothing
@@ -187,9 +209,10 @@ def migrate_record_fields(cursor=None, num_updated=0, batch_size=100):
 
         # Clone properties to the instance (so as not to delete from the class),
         # and delete from the entity.
-        record._clone_properties()
-        del record._properties['last_release_type']
-        del record._properties['last_release_date']
+        if test_only:
+            record._clone_properties()
+            del record._properties['last_release_type']
+            del record._properties['last_release_date']
 
         to_put.append(record)
         
@@ -202,8 +225,10 @@ def migrate_record_fields(cursor=None, num_updated=0, batch_size=100):
 
     # If there are more entities, re-queue this task for the next page.
     if more:
-        deferred.defer(
-            migrate_record_fields, cursor=next_cursor, num_updated=num_updated)
+        deferred.defer(migrate_record_fields, 
+                       cursor=next_cursor, 
+                       num_updated=num_updated, 
+                       test_only=test_only)
     else:
         logging.debug(
             'migrate_record_fields complete with %d updates!' % num_updated)

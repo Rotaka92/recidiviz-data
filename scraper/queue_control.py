@@ -1,5 +1,20 @@
-# Copyright 2017 Andrew Corp <andrew@andrewland.co> 
-# All rights reserved.
+# Recidiviz - a platform for tracking granular recidivism metrics in real time
+# Copyright (C) 2018 Recidiviz, Inc.
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+# =============================================================================
+
 
 from auth import authenticate_request
 from datetime import datetime
@@ -322,7 +337,7 @@ def purge_query_docket(region, scrape_type):
     while not empty:
         docket_items = docket_query.fetch(20, keys_only=True)
 
-        if len(docket_items) > 0:
+        if docket_items and len(docket_items) > 0:
             ndb.delete_multi(docket_items)
         else:
             empty = True
