@@ -42,8 +42,8 @@ Fields:
 class InmateSnapshot(polymodel.PolyModel):
     snapshot_date = ndb.DateTimeProperty(auto_now_add=True)
     facility = ndb.StringProperty()
-    last_release_date = ndb.DateProperty()
-    last_release_type = ndb.StringProperty()
+    latest_release_date = ndb.DateProperty()
+    latest_release_type = ndb.StringProperty()
     is_released = ndb.BooleanProperty()
     min_sentence_length = ndb.StructuredProperty(SentenceDuration, repeated=False)
     max_sentence_length = ndb.StructuredProperty(SentenceDuration, repeated=False)

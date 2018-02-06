@@ -22,7 +22,7 @@ import webapp2
 
 from itertools import combinations
 from models.inmate import Inmate
-from models.inmate_facility_snapshot import InmateFacilitySnapshot
+from models.inmate_snapshot import InmateSnapshot
 from models.record import Offense, SentenceDuration, Record
 from scraper.us_ny.us_ny_inmate import UsNyInmate
 from scraper.us_ny.us_ny_record import UsNyRecord
@@ -260,7 +260,7 @@ def find_recidivism(inmate, include_conditional_violations=False):
     that cohort
     """
     records = Record.query(ancestor=inmate.key).order(Record.custody_date).fetch()
-    snapshots = InmateFacilitySnapshot.query(ancestor=inmate.key).order(-InmateFacilitySnapshot.snapshot_date).fetch()
+    snapshots = InmateSnapshot.query(ancestor=inmate.key).order(-InmateSnapshot.snapshot_date).fetch()
 
     recidivism_events = {}
 
@@ -355,7 +355,7 @@ def final_release(record):
     if not record.is_released:
         return None
 
-    return record.last_release_date
+    return record.latest_release_date
 
 
 def first_facility(record, inmate_snapshots):

@@ -224,7 +224,7 @@ def get_target_list(scrape_type, region, params):
         # Pull a list of inmates with a release_date within the window (for
         # systems which provide this, lets us check on inmates released before
         # our background scraper first became aware of them but within window.)
-        recently_released = Record.query(Record.last_release_date > start_date)
+        recently_released = Record.query(Record.latest_release_date > start_date)
         recently_released_records = recently_released.fetch()
 
         for record in recently_released_records:

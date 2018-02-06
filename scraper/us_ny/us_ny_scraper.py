@@ -77,14 +77,6 @@ import time
 import random
 import re
 
-"""
-Rebuild search indices by running on local host w/dev server, then push those indices to the cloud
-Write data migration script and special handler
-    Migrate last_release_date and last_release_type from us_ny_record to record so they can be queried for all scrapers
-    Migrate InmateFacilitySnapshots into InmateSnapshots
-Remove test scaffolding in app.yaml, populate_db
-"""
-
 
 START_URL = "http://nysdoccslookup.doccs.ny.gov/"
 BASE_RESULTS_URL = "http://nysdoccslookup.doccs.ny.gov"
@@ -1247,8 +1239,8 @@ def store_record(inmate_details):
     record.sex = inmate_sex
     record.race = inmate_race
     if last_release:
-        record.last_release_type = last_release_type
-        record.last_release_date = last_release_date
+        record.latest_release_type = last_release_type
+        record.latest_release_date = last_release_date
     record.last_name = inmate_name[0]
     record.given_names = inmate_given_name
     record.record_id = record_id
@@ -1266,8 +1258,8 @@ def store_record(inmate_details):
 
     inmate_snapshot = UsNyInmateSnapshot(parent=record_key,
                                          facility=scraped_facility,
-                                         last_release_date=last_release_date,
-                                         last_release_type=last_release_type,
+                                         latest_release_date=last_release_date,
+                                         latest_release_type=last_release_type,
                                          is_released=released,
                                          min_sentence_length=min_sentence_duration,
                                          max_sentence_length=max_sentence_duration,
