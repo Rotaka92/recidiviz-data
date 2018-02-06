@@ -2,12 +2,21 @@ runtime: python27
 api_version: 1
 threadsafe: false
 
+builtins:
+# Deferred is required to use google.appengine.ext.deferred.
+- deferred: on
+
 handlers:
 - url: /scrape_command
   script: scraper.queue_control.app
 
 - url: /scraper
   script: scraper.worker.app
+  login: admin
+
+# MIGRATION ONLY
+- url: /data_migration
+  script: scraper.data_migration.app
   login: admin
 
 # TEST ONLY

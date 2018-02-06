@@ -63,3 +63,6 @@ class UsNyRecord(Record):
     max_expir_date_parole = ndb.DateProperty()
     max_expir_date_superv = ndb.DateProperty()
     parole_discharge_date = ndb.DateProperty()
+    # To remove post-migration
+    last_release_date = ndb.DateProperty()
+    last_release_type = ndb.StringProperty()

@@ -42,4 +42,3 @@ Old model, keeping for short-term migration purposes only.
 class InmateFacilitySnapshot(polymodel.PolyModel):
     snapshot_date = ndb.DateTimeProperty(auto_now_add=True)
     facility = ndb.StringProperty()
-    migrated = ndb.BooleanProperty()
