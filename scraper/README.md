@@ -1,17 +1,10 @@
 # Recidiviz Data Ingest
 
-All prison systems provide search engines, used to look up inmates' locations. These vary in function and in how you
-query them - some require just a last name, other require a full first and last name. Some show inmates who've been
-released, others don't. Most of them provide back a list of inmates who matched the query, their birth dates, and the
-facility they're currently being held in.
+<!---
+	Table of contents generated using [DocToc](http://doctoc.herokuapp.com/)
+-->
 
-This initial implementation of an ingest pipeline is designed to automate scraping of these systems, to allow us to
-calculate highly accurate recidivism rates over time. Depending on how much information is provided by a particular
-site, particularly whether or not historical information is exposed, this system may be able to collect all data
-necessary for calculating recidivism rates over a follow-up period of, say 3 years, or may only have that information
-after 3 years of operation.
-
-**Table of Contents**  *generated with [DocToc](http://doctoc.herokuapp.com/)*
+**Table of Contents** 
 
 - [Recidiviz Data Ingest](#)
 	- [Properties of region-specific prison systems](#)
@@ -33,6 +26,19 @@ after 3 years of operation.
 		- [Directory structure](#)
 		- [Adding new scrapers](#)
 		- [Adding new dependencies](#)
+
+
+All prison systems provide search engines, used to look up inmates' locations. These vary in function and in how you
+query them - some require just a last name, other require a full first and last name. Some show inmates who've been
+released, others don't. Most of them provide back a list of inmates who matched the query, their birth dates, and the
+facility they're currently being held in.
+
+This initial implementation of an ingest pipeline is designed to automate scraping of these systems, to allow us to
+calculate highly accurate recidivism rates over time. Depending on how much information is provided by a particular
+site, particularly whether or not historical information is exposed, this system may be able to collect all data
+necessary for calculating recidivism rates over a follow-up period of, say 3 years, or may only have that information
+after 3 years of operation.
+
 
 Properties of region-specific prison systems
 ------
