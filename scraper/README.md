@@ -11,6 +11,29 @@ site, particularly whether or not historical information is exposed, this system
 necessary for calculating recidivism rates over a follow-up period of, say 3 years, or may only have that information
 after 3 years of operation.
 
+**Table of Contents**  *generated with [DocToc](http://doctoc.herokuapp.com/)*
+
+- [Recidiviz Data Ingest](#)
+	- [Properties of region-specific prison systems](#)
+	- [Development](#)
+		- [General structure](#)
+			- [Regional variation](#)
+			- [Scraper actions](#)
+			- [Task queues](#)
+			- [Access and security](#)
+			- [Name lists](#)
+		- [Scraping types](#)
+			- [Background scraping](#)
+			- [Snapshot scraping](#)
+		- [Data models](#)
+		- [Respecting other corrections system users](#)
+			- [Policy restrictions](#)
+			- [Rate limiting](#)
+			- [Contact info](#)
+		- [Directory structure](#)
+		- [Adding new scrapers](#)
+		- [Adding new dependencies](#)
+
 Properties of region-specific prison systems
 ------
 Each state and the federal government have created their own inmate search systems, and several aspects of each one
