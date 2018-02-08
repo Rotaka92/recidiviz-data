@@ -220,6 +220,9 @@ Several data models are dedicated to preserving state during scrape jobs and ses
   Recidiviz system for a given region's scraper, when a request is received to start a new scape job for that scraper. A
   `DocketItem` includes fields to specify the scraper / region it is intended for, and the scrape type it should be used
   for.
+- `EnvironmentVariable` entities are used to store environment variables and sensitive information (such as usernames/
+	passwords to systems used by the scrapers). These entities are only created by hand, in the Cloud Console. Scrapers
+	will typically read them, then store them in Memcache for easy repeat-access.
 - `<region>_scrape_session.ScrapeSession` is used to track individual session information (the most recent inmate to be
 	scraped in that session, etc.) over a long run-time. This is only implemented in scrapers which anticipate long-lived 
 	scrape jobs (either because the system they scrape contains historical information, or because they receive very long 
@@ -301,7 +304,7 @@ More details on the directory structure:
 	`InmateSnapshot`.
 - The `name_lists` directory contains name list files (both general files and region-specific ones). See the 'Name 
 	lists' section above for more details.
-	The `calculator` directory contains mapreduce logic for metric calculations. 
+- The `calculator` directory contains mapreduce logic for metric calculations. 
 
 ### Adding new scrapers
 The general steps for adding a new region / scraper include:
